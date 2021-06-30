@@ -1,64 +1,72 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Unity.Mathematics;
 
-public class PointConstraint : MonoBehaviour
-{
+public class PointConstraint : MonoBehaviour {
     [SerializeField] Transform targetPoint;
     [SerializeField] Transform deformObject;
-    [SerializeField, Range(0f, 1f)] float beta = 1f;
-    [SerializeField, Range(0f, 1f)] float damping = 0.99f;
+    [SerializeField, Range (0f, 1f)] float beta = 1f;
+    [SerializeField, Range (0f, 1f)] float damping = 0.99f;
 
-    Vector3 offset = new Vector3(0.5f, 0.5f, 0.5f);
-    Vector3 gravity = new Vector3(0, -9.8f, 0);
+    float3 offset = new float3 (0.5f, 0.5f, 0.5f);
+    float3 gravity = new float3 (0, -9.8f, 0);
+
     float mass;
     float massInv;
-    Matrix3x3 inertia;
-    Matrix3x3 inertiaInv;
+    float3x3 inertia;
+    float3x3 inertiaInv;
+    float3 linarVelocity;
+    float3 angularVelocity;
 
-    Vector3 linarVelocity;
-    Vector3 angularVelocity;
-
-    void Start()
-    {
+    void Start () {
         mass = 1f;
         massInv = 1f / mass;
-        inertia = Matrix3x3.Identity; // tmp
-        inertiaInv = inertia.Inverted;
+
+        inertia = float3x3.identity; // tmp
+        inertiaInv = math.inverse (inertia);
     }
 
-    void Update()
-    {
-        var targetPos = targetPoint.position;
-        var position = deformObject.position;
-        var r = deformObject.rotation * offset;
-        var dt = Time.deltaTime;
+    void Update () {
+        UpdateDynamics ();
+    }
+
+    void UpdateDynamics () {
+        float3 targetPos = targetPoint.position;
+        float3 position = deformObject.position;
+        float3 r = deformObject.rotation * offset;
+        float dt = Time.deltaTime;
 
         linarVelocity += gravity * dt;
 
-        Matrix3x3 world2Local = Matrix3x3.FromRows
+        float3x3 local2World = new float3x3
         (
-            deformObject.TransformVector(new Vector3(1.0f, 0.0f, 0.0f)),
-            deformObject.TransformVector(new Vector3(0.0f, 1.0f, 0.0f)),
-            deformObject.TransformVector(new Vector3(0.0f, 0.0f, 1.0f))
+            deformObject.localToWorldMatrix.m00, deformObject.localToWorldMatrix.m01, deformObject.localToWorldMatrix.m02,
+            deformObject.localToWorldMatrix.m10, deformObject.localToWorldMatrix.m11, deformObject.localToWorldMatrix.m12,
+            deformObject.localToWorldMatrix.m20, deformObject.localToWorldMatrix.m21, deformObject.localToWorldMatrix.m22
         );
-        Matrix3x3 inertiaInvWs = world2Local.Transposed * inertiaInv * world2Local;
+        float3x3 inertiaInvWs = math.mul (local2World, math.mul (inertiaInv, math.transpose (local2World)));
 
-        var cPos = (position + r) - targetPos;
-        var cVel = linarVelocity + Vector3.Cross(angularVelocity, r);
+        float3 cPos = (position + r) - targetPos;
+        float3 cVel = linarVelocity + math.cross (angularVelocity, r);
 
-        var s = Matrix3x3.Skew(-r);
-        var k = (massInv * Matrix3x3.Identity) + s * inertiaInvWs * s.Transposed;
-        Matrix3x3 effectiveMass = k.Inverted;
-        Vector3 lambda = effectiveMass * (-(cVel + (beta / dt) * cPos));
+        float3x3 s = new float3x3
+        (
+            0.0f, r.z, -r.y,
+            -r.z, 0.0f, r.x,
+            r.y, -r.x, 0.0f
+        );
+        float3x3 k = (massInv * float3x3.identity) + math.mul (s, math.mul (inertiaInvWs, math.transpose (s)));
+        float3x3 effectiveMass = math.inverse (k);
+        float3 lambda = math.mul (effectiveMass, (-(cVel + (beta / dt) * cPos)));
 
         linarVelocity += massInv * lambda;
-        angularVelocity += (inertiaInvWs * s.Transposed) * lambda;
+        angularVelocity += math.mul (math.mul (inertiaInvWs, math.transpose (s)), lambda);
         linarVelocity *= damping;
         angularVelocity *= damping;
 
         // integration
-        deformObject.position += linarVelocity * dt;
-        deformObject.rotation = Quaternion.Euler(angularVelocity * dt * Mathf.Rad2Deg) * deformObject.rotation;
+        deformObject.position += (Vector3)linarVelocity * dt;
+        deformObject.rotation = Quaternion.Euler (angularVelocity * dt * Mathf.Rad2Deg) * deformObject.rotation;
     }
 }
