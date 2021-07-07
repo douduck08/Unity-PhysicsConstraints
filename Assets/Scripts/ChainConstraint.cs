@@ -28,7 +28,7 @@ public class ChainConstraint : MonoBehaviour {
     [SerializeField] float3 extraForce = new float3 (0, -9.8f, 0);
     [SerializeField, Range (0f, 1f)] float beta = 1f;
     [SerializeField, Range (0f, 1f)] float damping = 0.999f;
-
+    [SerializeField, Range (1, 10)] int iteration = 10;
 
     void Start () {
         constraintDatas = new ConstraintData[constraints.Length];
@@ -60,7 +60,7 @@ public class ChainConstraint : MonoBehaviour {
             constraintDatas[i].linarVelocity = constraintDatas[i].linarVelocity + extraForce * dt;
         }
 
-        for (int it = 0; it < 10; it++) {
+        for (int it = 0; it < iteration; it++) {
             for (int i = 0; i < constraints.Length; i++) {
                 var deformedObject = constraints[i].deformedObject;
                 float3 targetPos = (i == 0) ? targetPoint.position : constraints[i - 1].deformedObject.position;
@@ -100,6 +100,12 @@ public class ChainConstraint : MonoBehaviour {
                 angularVelocity += math.mul (inertiaInvWs, math.mul (st, lambda));
                 constraintDatas[i].linarVelocity = linarVelocity * damping;
                 constraintDatas[i].angularVelocity = angularVelocity * damping;
+
+                if (i > 0) {
+                    float3 v1 = constraintDatas[i - 1].linarVelocity;
+                    v1 -= constraintDatas[i - 1].massInv * lambda;
+                    constraintDatas[i - 1].linarVelocity = v1 * damping;
+                }
             }
         }
     }
