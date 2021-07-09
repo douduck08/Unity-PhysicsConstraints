@@ -45,7 +45,7 @@ public class ChainConstraint : MonoBehaviour {
 
     void FixedUpdate () {
         var dt = Time.fixedDeltaTime;
-        UpdateConstraint (Time.fixedDeltaTime);
+        UpdateDynamics (dt);
 
         for (int i = 0; i < constraints.Length; i++) {
             var deformedObject = constraints[i].deformedObject;
@@ -54,10 +54,10 @@ public class ChainConstraint : MonoBehaviour {
         }
     }
 
-    void UpdateConstraint (float dt) {
+    void UpdateDynamics (float dt) {
         for (int i = 0; i < constraints.Length; i++) {
             // apply extra forces
-            constraintDatas[i].linarVelocity = constraintDatas[i].linarVelocity + extraForce * dt;
+            constraintDatas[i].linarVelocity = constraintDatas[i].linarVelocity + constraintDatas[i].massInv * extraForce * dt;
         }
 
         for (int it = 0; it < iteration; it++) {

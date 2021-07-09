@@ -40,21 +40,21 @@ public class PointConstraint : MonoBehaviour {
 
     void FixedUpdate () {
         var dt = Time.fixedDeltaTime;
-        UpdateConstraint (dt);
+        UpdateDynamics (dt);
 
         var deformedObject = constraint.deformedObject;
         deformedObject.position += (Vector3)constraintData.linarVelocity * dt;
         deformedObject.rotation = Quaternion.Euler (constraintData.angularVelocity * dt * Mathf.Rad2Deg) * deformedObject.rotation;
     }
 
-    void UpdateConstraint (float dt) {
+    void UpdateDynamics (float dt) {
         var deformedObject = constraint.deformedObject;
         float3 targetPos = constraint.targetPoint.position;
         float3 position = deformedObject.position;
         float3 r = deformedObject.rotation * constraint.offset;
 
         // apply extra forces and caculate constraints
-        float3 linarVelocity = constraintData.linarVelocity + extraForce * dt;
+        float3 linarVelocity = constraintData.linarVelocity + constraintData.massInv * extraForce * dt;
         float3 angularVelocity = constraintData.angularVelocity;
         float3 positionConstraint = (position + r) - targetPos;
         float3 velocityConstraint = linarVelocity + math.cross (angularVelocity, r);
