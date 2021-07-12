@@ -45,7 +45,7 @@ public class ChainConstraint : MonoBehaviour {
 
     void FixedUpdate () {
         var dt = Time.fixedDeltaTime;
-        UpdateDynamics (dt);
+        UpdateDynamics (dt, Mathf.Pow (damping, dt));
 
         for (int i = 0; i < constraints.Length; i++) {
             var deformedObject = constraints[i].deformedObject;
@@ -54,10 +54,12 @@ public class ChainConstraint : MonoBehaviour {
         }
     }
 
-    void UpdateDynamics (float dt) {
+    void UpdateDynamics (float dt, float damping) {
         for (int i = 0; i < constraints.Length; i++) {
             // apply extra forces
             constraintDatas[i].linarVelocity = constraintDatas[i].linarVelocity + constraintDatas[i].massInv * extraForce * dt;
+            constraintDatas[i].linarVelocity *= damping;
+            constraintDatas[i].angularVelocity *= damping;
         }
 
         for (int it = 0; it < iteration; it++) {
@@ -98,8 +100,8 @@ public class ChainConstraint : MonoBehaviour {
                 // add constraint forces
                 linarVelocity += constraintDatas[i].massInv * lambda;
                 angularVelocity += math.mul (inertiaInvWs, math.mul (st, lambda));
-                constraintDatas[i].linarVelocity = linarVelocity * damping;
-                constraintDatas[i].angularVelocity = angularVelocity * damping;
+                constraintDatas[i].linarVelocity = linarVelocity;
+                constraintDatas[i].angularVelocity = angularVelocity;
 
                 if (i > 0) {
                     float3 v1 = constraintDatas[i - 1].linarVelocity;

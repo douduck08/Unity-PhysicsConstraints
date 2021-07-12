@@ -7,8 +7,10 @@ public class ClothConstraint : MonoBehaviour {
 
     [SerializeField] List<int> pinnedVertices;
 
+    [SerializeField, Range (0f, 1f)] float distanceStiffness = 1f;
+
     [Header ("Global Config")]
-    [SerializeField] float3 extraForce = new float3 (0, -9.8f, 0);
+    [SerializeField] Vector3 extraForce = new Vector3 (0, -9.8f, 0);
     [SerializeField, Range (0f, 1f)] float beta = 1f;
     [SerializeField, Range (0f, 1f)] float damping = 0.999f;
     [SerializeField, Range (1, 10)] int iteration = 10;
@@ -41,7 +43,8 @@ public class ClothConstraint : MonoBehaviour {
     }
 
     void FixedUpdate () {
-        UpdateDynamics (Time.fixedDeltaTime);
+        var dt = Time.fixedDeltaTime;
+        UpdateDynamics (dt, Mathf.Pow (damping, dt));
     }
 
     void LateUpdate () {
@@ -118,17 +121,20 @@ public class ClothConstraint : MonoBehaviour {
         }
     }
 
-    void UpdateDynamics (float dt) {
+    void UpdateDynamics (float dt, float damping) {
         // cache last position
         // apply extra forces
         // apply velocity to position
+        float3 localExtraForce = transform.InverseTransformDirection (extraForce);
         for (int i = 0; i < particleDatas.Length; i++) {
             particleDatas[i].lastPosition = particleDatas[i].position;
-            particleDatas[i].velocity += particleDatas[i].weight * extraForce * dt;
+            particleDatas[i].velocity += particleDatas[i].weight * localExtraForce * dt;
+            particleDatas[i].velocity *= damping;
             particleDatas[i].position += particleDatas[i].velocity * dt;
         }
 
         // constraints
+        float k = 1f - Mathf.Pow (1f - distanceStiffness, 1f / iteration);
         for (int it = 0; it < iteration; it++) {
             for (int i = 0; i < distanceConstraints.Length; i++) {
                 var particleId1 = distanceConstraints[i].particleId1;
@@ -140,8 +146,8 @@ public class ClothConstraint : MonoBehaviour {
                 float3 n = math.normalize (diff);
                 float lambda = math.length (diff) - distanceConstraints[i].distance;
 
-                particleDatas[particleId1].position += -weight1 / (weight1 + weight2) * lambda * n;
-                particleDatas[particleId2].position += weight2 / (weight1 + weight2) * lambda * n;
+                particleDatas[particleId1].position += -weight1 / (weight1 + weight2) * lambda * k * n;
+                particleDatas[particleId2].position += weight2 / (weight1 + weight2) * lambda * k * n;
             }
         }
 
