@@ -6,8 +6,11 @@ using Unity.Mathematics;
 public class ClothConstraint : MonoBehaviour {
 
     [SerializeField] List<int> pinnedVertices;
+    [SerializeField] List<SphereCollider> colliders;
 
-    [SerializeField, Range (0f, 1f)] float distanceStiffness = 1f;
+    [SerializeField, Range (0f, 1f)] float stretchStiffness = 1f;
+    [SerializeField, Range (0f, 1f)] float bendStiffness = 1f;
+    [SerializeField] float particleRadius = 0.01f;
 
     [Header ("Global Config")]
     [SerializeField] Vector3 extraForce = new Vector3 (0, -9.8f, 0);
@@ -22,9 +25,15 @@ public class ClothConstraint : MonoBehaviour {
     struct ParticleData {
         public int vertexId;
         public float weight;
-        public float3 lastPosition;
         public float3 position;
+        public float3 lastPosition;
         public float3 velocity;
+    }
+
+    struct ColliderData {
+        public Transform trandform;
+        public float3 position;
+        public float radius;
     }
 
     struct DistanceConstraint {
@@ -34,11 +43,14 @@ public class ClothConstraint : MonoBehaviour {
     }
 
     ParticleData[] particleDatas;
-    DistanceConstraint[] distanceConstraints;
+    ColliderData[] colliderDatas;
+    DistanceConstraint[] stretchConstraints;
+    DistanceConstraint[] bendConstraints;
 
     void Start () {
         CheckResources ();
         InitParticles ();
+        InitColliders ();
         InitConstraints ();
     }
 
@@ -88,37 +100,73 @@ public class ClothConstraint : MonoBehaviour {
         for (int i = 0; i < particleDatas.Length; i++) {
             particleDatas[i].vertexId = i;
             particleDatas[i].weight = pinnedVertices.Contains (i) ? 0f : 1f;
-            particleDatas[i].position = vertices[i];
+            particleDatas[i].position = particleDatas[i].lastPosition = vertices[i];
             particleDatas[i].velocity = float3.zero;
         }
     }
 
+    void InitColliders () {
+        colliderDatas = new ColliderData[colliders.Count];
+        for (int i = 0; i < colliderDatas.Length; i++) {
+            colliderDatas[i].trandform = colliders[i].transform;
+            var scale = colliderDatas[i].trandform.lossyScale;
+            colliderDatas[i].radius = colliders[i].radius * Mathf.Max (scale.x, scale.y, scale.z);
+        }
+    }
+
     void InitConstraints () {
-        distanceConstraints = new DistanceConstraint[220];
+        stretchConstraints = new DistanceConstraint[10 * 11 * 2];
         var constraintId = 0;
         for (int i = 0; i < 10; i++) {
-            for (int j = 0; j <= 10; j++) {
+            for (int j = 0; j < 11; j++) {
                 var particleId1 = i * 11 + j;
                 var particleId2 = particleId1 + 11;
-                distanceConstraints[constraintId].particleId1 = particleId1;
-                distanceConstraints[constraintId].particleId2 = particleId2;
+                stretchConstraints[constraintId].particleId1 = particleId1;
+                stretchConstraints[constraintId].particleId2 = particleId2;
                 var posDiff = particleDatas[particleId1].position - particleDatas[particleId2].position;
-                distanceConstraints[constraintId].distance = math.length (posDiff);
+                stretchConstraints[constraintId].distance = math.length (posDiff);
                 constraintId += 1;
             }
         }
 
         for (int i = 0; i < 10; i++) {
-            for (int j = 0; j <= 10; j++) {
+            for (int j = 0; j < 11; j++) {
                 var particleId1 = i + j * 11;
                 var particleId2 = particleId1 + 1;
-                distanceConstraints[constraintId].particleId1 = particleId1;
-                distanceConstraints[constraintId].particleId2 = particleId2;
+                stretchConstraints[constraintId].particleId1 = particleId1;
+                stretchConstraints[constraintId].particleId2 = particleId2;
                 var posDiff = particleDatas[particleId1].position - particleDatas[particleId2].position;
-                distanceConstraints[constraintId].distance = math.length (posDiff);
+                stretchConstraints[constraintId].distance = math.length (posDiff);
                 constraintId += 1;
             }
         }
+
+        bendConstraints = new DistanceConstraint[9 * 11 * 2];
+        constraintId = 0;
+        for (int i = 0; i < 9; i++) {
+            for (int j = 0; j < 11; j++) {
+                var particleId1 = i * 11 + j;
+                var particleId2 = particleId1 + 22;
+                bendConstraints[constraintId].particleId1 = particleId1;
+                bendConstraints[constraintId].particleId2 = particleId2;
+                var posDiff = particleDatas[particleId1].position - particleDatas[particleId2].position;
+                bendConstraints[constraintId].distance = math.length (posDiff);
+                constraintId += 1;
+            }
+        }
+
+        for (int i = 0; i < 9; i++) {
+            for (int j = 0; j < 11; j++) {
+                var particleId1 = i + j * 11;
+                var particleId2 = particleId1 + 2;
+                bendConstraints[constraintId].particleId1 = particleId1;
+                bendConstraints[constraintId].particleId2 = particleId2;
+                var posDiff = particleDatas[particleId1].position - particleDatas[particleId2].position;
+                bendConstraints[constraintId].distance = math.length (posDiff);
+                constraintId += 1;
+            }
+        }
+
     }
 
     void UpdateDynamics (float dt, float damping) {
@@ -127,33 +175,71 @@ public class ClothConstraint : MonoBehaviour {
         // apply velocity to position
         float3 localExtraForce = transform.InverseTransformDirection (extraForce);
         for (int i = 0; i < particleDatas.Length; i++) {
-            particleDatas[i].lastPosition = particleDatas[i].position;
             particleDatas[i].velocity += particleDatas[i].weight * localExtraForce * dt;
             particleDatas[i].velocity *= damping;
             particleDatas[i].position += particleDatas[i].velocity * dt;
         }
 
+        // update colliders
+        var worldToLocal = transform;
+        for (int i = 0; i < colliderDatas.Length; i++) {
+            colliderDatas[i].position = worldToLocal.InverseTransformPoint (colliderDatas[i].trandform.position);
+        }
+
         // constraints
-        float k = 1f - Mathf.Pow (1f - distanceStiffness, 1f / iteration);
+        float ks = 1f - Mathf.Pow (1f - stretchStiffness, 1f / iteration);
+        float kb = 1f - Mathf.Pow (1f - bendStiffness, 1f / iteration);
         for (int it = 0; it < iteration; it++) {
-            for (int i = 0; i < distanceConstraints.Length; i++) {
-                var particleId1 = distanceConstraints[i].particleId1;
-                var particleId2 = distanceConstraints[i].particleId2;
+            // bend constraints
+            for (int i = 0; i < bendConstraints.Length; i++) {
+                var particleId1 = bendConstraints[i].particleId1;
+                var particleId2 = bendConstraints[i].particleId2;
                 var weight1 = particleDatas[particleId1].weight;
                 var weight2 = particleDatas[particleId2].weight;
 
                 float3 diff = particleDatas[particleId1].position - particleDatas[particleId2].position;
                 float3 n = math.normalize (diff);
-                float lambda = math.length (diff) - distanceConstraints[i].distance;
+                float lambda = math.length (diff) - bendConstraints[i].distance;
 
-                particleDatas[particleId1].position += -weight1 / (weight1 + weight2) * lambda * k * n;
-                particleDatas[particleId2].position += weight2 / (weight1 + weight2) * lambda * k * n;
+                particleDatas[particleId1].position += -weight1 / (weight1 + weight2) * lambda * kb * n;
+                particleDatas[particleId2].position += weight2 / (weight1 + weight2) * lambda * kb * n;
+            }
+
+            // distance constraints
+            for (int i = 0; i < stretchConstraints.Length; i++) {
+                var particleId1 = stretchConstraints[i].particleId1;
+                var particleId2 = stretchConstraints[i].particleId2;
+                var weight1 = particleDatas[particleId1].weight;
+                var weight2 = particleDatas[particleId2].weight;
+
+                float3 diff = particleDatas[particleId1].position - particleDatas[particleId2].position;
+                float3 n = math.normalize (diff);
+                float lambda = math.length (diff) - stretchConstraints[i].distance;
+
+                particleDatas[particleId1].position += -weight1 / (weight1 + weight2) * lambda * ks * n;
+                particleDatas[particleId2].position += weight2 / (weight1 + weight2) * lambda * ks * n;
+            }
+
+            // collider constraint
+            for (int i = 0; i < colliderDatas.Length; i++) {
+                var position = colliderDatas[i].position;
+                var distance = colliderDatas[i].radius + particleRadius;
+                for (int particleId = 0; particleId < particleDatas.Length; particleId++) {
+                    float3 diff = particleDatas[particleId].position - position;
+                    float lambda = math.length (diff) - distance;
+                    if (lambda < 0) {
+                        float3 n = math.normalize (diff);
+                        particleDatas[particleId].position -= lambda * n;
+                    }
+
+                }
             }
         }
 
         // update velocity
         for (int i = 0; i < particleDatas.Length; i++) {
             particleDatas[i].velocity = (particleDatas[i].position - particleDatas[i].lastPosition) / dt;
+            particleDatas[i].lastPosition = particleDatas[i].position;
         }
     }
 }
