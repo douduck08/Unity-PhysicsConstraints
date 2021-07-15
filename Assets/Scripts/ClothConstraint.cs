@@ -42,10 +42,17 @@ public class ClothConstraint : MonoBehaviour {
         public float distance;
     }
 
+    struct BendConstraint {
+        public int particleId1;
+        public int particleId2;
+        public int particleIdV;
+        public float restLength;
+    }
+
     ParticleData[] particleDatas;
     ColliderData[] colliderDatas;
     DistanceConstraint[] stretchConstraints;
-    DistanceConstraint[] bendConstraints;
+    BendConstraint[] bendConstraints;
 
     void Start () {
         CheckResources ();
@@ -141,16 +148,19 @@ public class ClothConstraint : MonoBehaviour {
             }
         }
 
-        bendConstraints = new DistanceConstraint[9 * 11 * 2];
+        bendConstraints = new BendConstraint[9 * 11 * 2];
         constraintId = 0;
         for (int i = 0; i < 9; i++) {
             for (int j = 0; j < 11; j++) {
                 var particleId1 = i * 11 + j;
                 var particleId2 = particleId1 + 22;
+                var particleIdV = particleId1 + 11;
                 bendConstraints[constraintId].particleId1 = particleId1;
                 bendConstraints[constraintId].particleId2 = particleId2;
-                var posDiff = particleDatas[particleId1].position - particleDatas[particleId2].position;
-                bendConstraints[constraintId].distance = math.length (posDiff);
+                bendConstraints[constraintId].particleIdV = particleIdV;
+                var c = (1f / 3f) * (particleDatas[particleId1].position + particleDatas[particleId2].position + particleDatas[particleIdV].position);
+                var h = particleDatas[particleIdV].position - c;
+                bendConstraints[constraintId].restLength = math.length (h);
                 constraintId += 1;
             }
         }
@@ -159,10 +169,13 @@ public class ClothConstraint : MonoBehaviour {
             for (int j = 0; j < 11; j++) {
                 var particleId1 = i + j * 11;
                 var particleId2 = particleId1 + 2;
+                var particleIdV = particleId1 + 1;
                 bendConstraints[constraintId].particleId1 = particleId1;
                 bendConstraints[constraintId].particleId2 = particleId2;
-                var posDiff = particleDatas[particleId1].position - particleDatas[particleId2].position;
-                bendConstraints[constraintId].distance = math.length (posDiff);
+                bendConstraints[constraintId].particleIdV = particleIdV;
+                var c = (1f / 3f) * (particleDatas[particleId1].position + particleDatas[particleId2].position + particleDatas[particleIdV].position);
+                var h = particleDatas[particleIdV].position - c;
+                bendConstraints[constraintId].restLength = math.length (h);
                 constraintId += 1;
             }
         }
@@ -194,15 +207,19 @@ public class ClothConstraint : MonoBehaviour {
             for (int i = 0; i < bendConstraints.Length; i++) {
                 var particleId1 = bendConstraints[i].particleId1;
                 var particleId2 = bendConstraints[i].particleId2;
+                var particleIdV = bendConstraints[i].particleIdV;
                 var weight1 = particleDatas[particleId1].weight;
                 var weight2 = particleDatas[particleId2].weight;
+                var weightV = particleDatas[particleIdV].weight;
 
-                float3 diff = particleDatas[particleId1].position - particleDatas[particleId2].position;
-                float3 n = math.normalize (diff);
-                float lambda = math.length (diff) - bendConstraints[i].distance;
+                float3 c = (1f / 3f) * (particleDatas[particleId1].position + particleDatas[particleId2].position + particleDatas[particleIdV].position);
+                float3 h = particleDatas[particleIdV].position - c;
+                float lambda = 1f - (bendConstraints[i].restLength + 0.05f) / (math.length (h) + 0.0001f);
 
-                particleDatas[particleId1].position += -weight1 / (weight1 + weight2) * lambda * kb * n;
-                particleDatas[particleId2].position += weight2 / (weight1 + weight2) * lambda * kb * n;
+                float w = weight1 + weight2 + weightV * 2f;
+                particleDatas[particleId1].position += (2f * weight1 / w) * lambda * kb * h;
+                particleDatas[particleId2].position += (2f * weight2 / w) * lambda * kb * h;
+                particleDatas[particleIdV].position += (-4f * weightV / w) * lambda * kb * h;
             }
 
             // distance constraints
