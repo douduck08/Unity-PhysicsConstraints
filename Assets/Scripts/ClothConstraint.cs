@@ -8,9 +8,18 @@ public class ClothConstraint : MonoBehaviour {
     [SerializeField] List<int> pinnedVertices;
     [SerializeField] List<SphereCollider> colliders;
 
+    [Header ("Constraint Config")]
     [SerializeField, Range (0f, 1f)] float stretchStiffness = 1f;
     [SerializeField, Range (0f, 1f)] float bendStiffness = 1f;
     [SerializeField] float particleRadius = 0.01f;
+
+    [System.Serializable]
+    public struct FrictionConfig {
+        [Range (0f, 1f)] public float strength;
+        [Range (0f, 1f)] public float staticFriction;
+        [Range (0f, 1f)] public float kineticFriction;
+    }
+    [SerializeField] FrictionConfig friction = new FrictionConfig { strength = 1f, staticFriction = 0.1f, kineticFriction = 0.05f };
 
     [Header ("Global Config")]
     [SerializeField] Vector3 extraForce = new Vector3 (0, -9.8f, 0);
@@ -202,8 +211,10 @@ public class ClothConstraint : MonoBehaviour {
         // constraints
         float ks = 1f - Mathf.Pow (1f - stretchStiffness, 1f / iteration);
         float kb = 1f - Mathf.Pow (1f - bendStiffness, 1f / iteration);
+        float staticFriction = friction.staticFriction * friction.strength * dt;
+        float kineticFriction = friction.kineticFriction * friction.strength * dt;
         for (int it = 0; it < iteration; it++) {
-            // bend constraints
+            // bending constraints
             for (int i = 0; i < bendConstraints.Length; i++) {
                 var particleId1 = bendConstraints[i].particleId1;
                 var particleId2 = bendConstraints[i].particleId2;
@@ -237,7 +248,28 @@ public class ClothConstraint : MonoBehaviour {
                 particleDatas[particleId2].position += weight2 / (weight1 + weight2) * lambda * ks * n;
             }
 
-            // collider constraint
+            // friction constraint
+            for (int i = 0; i < colliderDatas.Length; i++) {
+                var position = colliderDatas[i].position;
+                var distance = colliderDatas[i].radius + particleRadius;
+                for (int particleId = 0; particleId < particleDatas.Length; particleId++) {
+                    float3 diff = particleDatas[particleId].position - position;
+                    float lambda = math.length (diff) - distance;
+                    if (lambda < 0) {
+                        float3 n = math.normalize (diff);
+                        float3 move = particleDatas[particleId].position - particleDatas[particleId].lastPosition;
+                        move = move - math.dot (move, n) * n;
+                        float moveLength = math.length (move);
+                        if (moveLength < staticFriction) {
+                            particleDatas[particleId].position -= move;
+                        } else {
+                            particleDatas[particleId].position -= move * math.min (kineticFriction / moveLength, 1);
+                        }
+                    }
+                }
+            }
+
+            // collision constraint
             for (int i = 0; i < colliderDatas.Length; i++) {
                 var position = colliderDatas[i].position;
                 var distance = colliderDatas[i].radius + particleRadius;
